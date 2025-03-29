@@ -85,7 +85,7 @@ impl<VType: VBase, EType: EBase> ExpandGraph<VType, EType> {
 }
 
 impl<VType: VBase, EType: EBase> ExpandGraph<VType, EType> {
-  pub async fn group_dangling_e_by_pending_v(&self) -> HashMap<String, Vec<EType>> {
+  pub fn group_dangling_e_by_pending_v(&self) -> HashMap<String, Vec<EType>> {
     let mut grouped: HashMap<String, Vec<EType>> = HashMap::new();
 
     for dangling_e in self.dangling_e_entities.values() {
@@ -111,7 +111,7 @@ impl<VType: VBase, EType: EBase> ExpandGraph<VType, EType> {
       && !self.dyn_graph.has_eid(e.eid())
   }
 
-  pub async fn update_valid_dangling_edges<'a>(
+  pub fn update_valid_dangling_edges<'a>(
     &'a mut self,
     dangling_edges: impl IntoIterator<Item = (&'a EType, &'a str)>,
   ) -> HashSet<String> {
@@ -142,7 +142,7 @@ impl<VType: VBase, EType: EBase> ExpandGraph<VType, EType> {
     false
   }
 
-  pub async fn update_valid_target_vertices<'a>(
+  pub fn update_valid_target_vertices<'a>(
     &'a mut self,
     target_vertices: impl IntoIterator<Item = (&'a VType, &'a str)>,
   ) -> HashSet<String> {
@@ -183,7 +183,7 @@ impl<VType: VBase, EType: EBase> ExpandGraph<VType, EType> {
   }
 }
 
-pub async fn union_then_intersect_on_connective_v<VType: VBase, EType: EBase>(
+pub fn union_then_intersect_on_connective_v<VType: VBase, EType: EBase>(
   l_expand_graph: &ExpandGraph<VType, EType>,
   r_expand_graph: &ExpandGraph<VType, EType>,
 ) -> Vec<ExpandGraph<VType, EType>> {
@@ -197,13 +197,14 @@ pub async fn union_then_intersect_on_connective_v<VType: VBase, EType: EBase>(
 
   let mut new_graph = DynGraph::<VType, EType>::default();
   new_graph.update_v_batch(l_v_pat_pairs.into_iter().chain(r_v_pat_pairs));
-  new_graph.update_e_batch(r_e_pat_pairs.into_iter().chain(l_e_pat_pairs));
+  new_graph.update_e_batch(l_e_pat_pairs.into_iter().chain(r_e_pat_pairs));
 
-  let (grouped_l, grouped_r) = tokio::join!(
+  let (grouped_l, grouped_r) = (
     l_expand_graph.group_dangling_e_by_pending_v(),
-    r_expand_graph.group_dangling_e_by_pending_v()
+    r_expand_graph.group_dangling_e_by_pending_v(),
   );
 
+  // let mut target_v_grouped_results = HashMap::new();
   let mut result = vec![];
 
   for (l_pending_vid, l_dangling_es) in &grouped_l {
@@ -213,23 +214,28 @@ pub async fn union_then_intersect_on_connective_v<VType: VBase, EType: EBase>(
       }
 
       let mut expanding_dg: ExpandGraph<VType, EType> = new_graph.as_ref().into();
-      expanding_dg
-        .update_valid_dangling_edges(
-          l_dangling_es
-            .iter()
-            .map(|e| (e, l_expand_graph.dangling_e_patterns[e.eid()].as_str())),
-        )
-        .await;
-      expanding_dg
-        .update_valid_dangling_edges(
-          r_dangling_es
-            .iter()
-            .map(|e| (e, r_expand_graph.dangling_e_patterns[e.eid()].as_str())),
-        )
-        .await;
+      expanding_dg.update_valid_dangling_edges(
+        l_dangling_es
+          .iter()
+          .map(|e| (e, l_expand_graph.dangling_e_patterns[e.eid()].as_str())),
+      );
+      expanding_dg.update_valid_dangling_edges(
+        r_dangling_es
+          .iter()
+          .map(|e| (e, r_expand_graph.dangling_e_patterns[e.eid()].as_str())),
+      );
+
       result.push(expanding_dg);
+      // target_v_grouped_results
+      //   .entry(l_pending_vid.to_owned())
+      //   .or_insert_with(Vec::new)
+      //   .push(expanding_dg);
     }
   }
+
+  // for (_, group) in target_v_grouped_results.drain() {
+  //   result.extend(group);
+  // }
 
   result
 }

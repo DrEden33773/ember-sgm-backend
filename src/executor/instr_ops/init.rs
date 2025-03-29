@@ -4,6 +4,7 @@ use crate::{
   storage::StorageAdapter,
   utils::dyn_graph::DynGraph,
 };
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -15,41 +16,46 @@ pub struct InitOperator<S: StorageAdapter> {
 
 impl<S: StorageAdapter> InitOperator<S> {
   pub async fn execute(&mut self, instr: &Instruction) {
-    let instr_json = serde_json::to_string_pretty(instr).unwrap();
-    println!("{instr_json}\n");
+    println!("{instr:#?}\n");
 
-    let mut ctx = self.ctx.lock().await;
-
-    let pattern_v = ctx.get_pattern_v(&instr.vid).cloned();
-    if pattern_v.is_none() {
-      println!(
-        "No pattern_v found for '{}'\n",
-        instr.single_op.as_ref().unwrap()
-      );
-      return;
-    }
-
-    let pattern_v = pattern_v.unwrap();
-
-    ctx.init_f_block(&instr.target_var);
+    let pattern_v = { self.ctx.lock().await }
+      .get_pattern_v(&instr.vid)
+      .to_owned();
 
     let label = pattern_v.label.as_str();
     let attr = pattern_v.attr.as_ref();
-    let matched_vs = self.storage_adapter.lock().await.load_v(label, attr).await;
 
-    let matched_results = matched_vs
-      .into_iter()
+    // load vertices
+    let matched_vs = { self.storage_adapter.lock().await }
+      .load_v(label, attr)
+      .await;
+
+    // must init f_block first
+    let mut ctx = self.ctx.lock().await;
+    ctx.init_f_block(&instr.target_var);
+
+    // filter-out if the vertex has already been expanded
+    let unexpanded_matched_vs = matched_vs
+      .into_par_iter()
       .filter(|data_v| !ctx.expanded_data_vids.contains(&data_v.vid))
-      .map(|data_v| {
-        let mut matched_dg = DynGraph::<DataVertex, DataEdge>::default();
-        let frontier_vid = data_v.vid.clone();
-        matched_dg.update_v(data_v, pattern_v.vid.clone());
-        (matched_dg, frontier_vid)
-      })
-      .collect::<Vec<_>>();
+      .collect_vec_list();
 
-    for (matched_dg, frontier_vid) in matched_results {
-      ctx.append_to_f_block(&instr.target_var, matched_dg, &frontier_vid);
+    // prepare for: updating the block
+    let pre = unexpanded_matched_vs
+      .into_par_iter()
+      .flatten()
+      .map(|data_v| {
+        let frontier_vid = data_v.vid.to_owned();
+        let mut matched_dg = DynGraph::<DataVertex, DataEdge>::default();
+        matched_dg.update_v(data_v, pattern_v.vid.clone());
+
+        (&instr.target_var, matched_dg, frontier_vid)
+      })
+      .collect_vec_list();
+
+    // update f_block
+    for (target_var, matched_dg, frontier_vid) in pre.into_iter().flatten() {
+      ctx.append_to_f_block(target_var, matched_dg, &frontier_vid);
     }
   }
 }

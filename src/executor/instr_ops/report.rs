@@ -1,5 +1,4 @@
 use crate::{matching_ctx::MatchingCtx, schemas::Instruction, utils::dyn_graph::DynGraph};
-use futures::future;
 use hashbrown::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -11,8 +10,7 @@ pub struct ReportOperator {
 
 impl ReportOperator {
   pub async fn execute(&mut self, instr: &Instruction) {
-    let instr_json = serde_json::to_string_pretty(instr).unwrap();
-    println!("{instr_json}\n");
+    println!("{instr:#?}\n");
 
     let mut ctx = self.ctx.lock().await;
 
@@ -29,7 +27,7 @@ impl ReportOperator {
       .map(|e_pat| (e_pat.to_owned(), 1))
       .collect::<HashMap<_, usize>>();
 
-    let could_match_partial_pattern = async |graph: &DynGraph| -> bool {
+    let could_match_partial_pattern = |graph: &DynGraph| -> bool {
       let mut graph_v_pat_cnt = HashMap::new();
       let mut graph_e_pat_cnt = HashMap::new();
 
@@ -70,15 +68,9 @@ impl ReportOperator {
     for (_, f_bucket) in f_buckets {
       let curr_group = f_bucket.all_matched.into_iter().collect::<Vec<_>>();
 
-      let filtered_future = curr_group.into_iter().map(|g| async {
-        let satisfies = could_match_partial_pattern(&g).await;
-        if satisfies { Some(g) } else { None }
-      });
-
-      let filtered_group = future::join_all(filtered_future)
-        .await
+      let filtered_group = curr_group
         .into_iter()
-        .flatten()
+        .filter(&could_match_partial_pattern)
         .collect::<Vec<_>>();
 
       filtered_groups.push(filtered_group);

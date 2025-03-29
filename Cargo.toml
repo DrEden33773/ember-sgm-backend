@@ -6,9 +6,10 @@ edition = "2024"
 [dependencies]
 dotenv = "0.15.0"
 futures = "0.3.31"
-hashbrown = { version = "0.15.2", features = ["serde"] }
+hashbrown = { version = "0.15.2", features = ["rayon", "serde"] }
 itertools = "0.14.0"
 neo4rs = "0.8.0"
+num_cpus = "1.16.0"
 project-root = "0.2.2"
 rayon = "1.10.0"
 serde = "1.0.219"

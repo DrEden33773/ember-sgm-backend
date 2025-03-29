@@ -163,8 +163,11 @@ impl<VType: VBase, EType: EBase> DynGraph<VType, EType> {
   pub fn update_v(&mut self, vertex: VType, pattern: String) -> &mut Self {
     let vid = vertex.vid().to_owned();
     self.v_entities.insert(vid.to_owned(), vertex);
-    self.adj_table.insert(vid.to_owned(), VNode::default());
-    self.v_patterns.insert(vid, pattern.to_owned());
+
+    // self.adj_table.insert(vid.to_owned(), VNode::default()); // BUG
+
+    self.adj_table.entry(vid.to_owned()).or_default();
+    self.v_patterns.insert(vid, pattern);
     self
   }
 

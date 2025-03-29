@@ -52,8 +52,8 @@ impl MatchingCtx {
 
 impl MatchingCtx {
   #[inline]
-  pub fn get_pattern_v(&self, vid: VidRef) -> Option<&PatternVertex> {
-    self.plan_data.pattern_vs.get(vid)
+  pub fn get_pattern_v(&self, vid: VidRef) -> &PatternVertex {
+    self.plan_data.pattern_vs.get(vid).unwrap()
   }
 
   #[inline]
@@ -69,8 +69,8 @@ impl MatchingCtx {
   }
 
   #[inline]
-  pub fn get_pattern_e(&self, eid: VidRef) -> Option<&PatternEdge> {
-    self.plan_data.pattern_es.get(eid)
+  pub fn get_pattern_e(&self, eid: VidRef) -> &PatternEdge {
+    self.plan_data.pattern_es.get(eid).unwrap()
   }
 
   #[inline]
@@ -101,8 +101,10 @@ impl MatchingCtx {
     frontier_vid: VidRef,
   ) {
     let key = resolve_var_name(target_var);
-    let next_idx = self.f_block.len();
-    let f_bucket = self.f_block.entry(key.to_string()).or_default();
+    // let next_idx = self.f_block.len(); // BUG
+    let next_idx = self.f_block[key].all_matched.len();
+
+    let f_bucket = self.f_block.get_mut(key).unwrap();
     f_bucket.all_matched.push(matched_graph);
     f_bucket
       .matched_with_frontiers

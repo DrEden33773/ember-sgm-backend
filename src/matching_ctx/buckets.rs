@@ -39,6 +39,7 @@ pub struct TBucket {
   pub(crate) target_pat_vid: Vid,
   pub(crate) expanding_graphs: Vec<ExpandGraph>,
 }
+
 impl TBucket {
   pub fn new(target_pat_vid: Vid) -> Self {
     Self {

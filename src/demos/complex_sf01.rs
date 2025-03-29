@@ -24,3 +24,8 @@ pub async fn ic_1_on_sf_01() -> io::Result<()> {
   println!("\nQuerying 'IC-1' on 'SF0.1' ...\n");
   exec("ldbc-ic-1-single-directed-knows.json").await
 }
+
+pub async fn ic_11_on_sf_01() -> io::Result<()> {
+  println!("\nQuerying 'IC-11' on 'SF0.1' ...\n");
+  exec("ldbc-ic-11-single-directed-knows.json").await
+}

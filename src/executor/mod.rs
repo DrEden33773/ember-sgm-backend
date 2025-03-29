@@ -1,7 +1,6 @@
 use crate::{
   matching_ctx::MatchingCtx, schemas::*, storage::StorageAdapter, utils::dyn_graph::DynGraph,
 };
-use futures::future;
 use hashbrown::HashMap;
 use instr_ops::InstrOperatorFactory;
 use itertools::Itertools;
@@ -61,14 +60,6 @@ impl<S: StorageAdapter> ExecEngine<S> {
       .filter(|v| !v.is_empty())
       .collect::<Vec<_>>();
 
-    fn preview_scale(unmerged: &[Vec<DynGraph>]) {
-      let len_vec = unmerged.iter().map(|v| v.len()).collect::<Vec<_>>();
-      println!("unmerged_results scale: {len_vec:?}\n");
-    }
-
-    // println!("unmerged_results: {unmerged_results:#?}\n");
-    preview_scale(&unmerged_results);
-
     if unmerged_results.is_empty() {
       return vec![];
     }
@@ -88,7 +79,7 @@ impl<S: StorageAdapter> ExecEngine<S> {
       .map(|e_pat| (e_pat.to_owned(), 1))
       .collect::<HashMap<_, usize>>();
 
-    let could_match_the_whole_pattern = async |graph: &DynGraph| -> bool {
+    let could_match_the_whole_pattern = |graph: &DynGraph| -> bool {
       let mut graph_v_pat_cnt = HashMap::new();
       let mut graph_e_pat_cnt = HashMap::new();
 
@@ -114,15 +105,9 @@ impl<S: StorageAdapter> ExecEngine<S> {
       result.push(curr);
     }
 
-    let result_future = result.into_iter().map(|graph| async {
-      let satisfies = could_match_the_whole_pattern(&graph).await;
-      if satisfies { Some(graph) } else { None }
-    });
-
-    future::join_all(result_future)
-      .await
+    result
       .into_iter()
-      .flatten()
+      .filter(&could_match_the_whole_pattern)
       .collect::<Vec<_>>()
   }
 }

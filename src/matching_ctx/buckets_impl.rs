@@ -11,6 +11,10 @@ use crate::{
 };
 use futures::future;
 use hashbrown::{HashMap, HashSet};
+use itertools::Itertools;
+use rayon::iter::{
+  IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 
 async fn does_data_v_satisfy_pattern(
   dg_vid: VidRef<'_>,
@@ -176,8 +180,7 @@ impl ABucket {
               .unwrap_or_default();
 
             expanding_graph
-              .update_valid_dangling_edges(edges.iter().zip(pat_strs.iter().map(String::as_str)))
-              .await;
+              .update_valid_dangling_edges(edges.iter().zip(pat_strs.iter().map(String::as_str)));
             self
               .next_pat_grouped_expanding
               .entry(next_pat_vid.to_owned())
@@ -255,22 +258,25 @@ async fn incremental_match<'a, S: StorageAdapter>(ctx: LoadWithCondCtx<'a, S>) -
 }
 
 impl CBucket {
-  pub async fn build_from_a_group(
-    a_group: impl IntoIterator<Item = ExpandGraph>,
-    loaded_v_pat_pairs: impl IntoIterator<Item = (DataVertex, String)>,
+  pub fn build_from_a_group(
+    a_group: Vec<ExpandGraph>,
+    loaded_v_pat_pairs: Vec<(DataVertex, String)>,
   ) -> Self {
-    let loaded = loaded_v_pat_pairs.into_iter().collect::<Vec<_>>();
-
     let mut all_expanded = vec![];
     let mut expanded_with_frontiers = HashMap::new();
 
-    let a_group = a_group.into_iter().collect::<Vec<_>>();
+    let pre = a_group
+      .into_par_iter()
+      .enumerate()
+      .map(|(idx, mut expanding)| {
+        let valid_targets = expanding
+          .update_valid_target_vertices(loaded_v_pat_pairs.iter().map(|(v, p)| (v, p.as_str())));
 
-    for (idx, mut expanding) in a_group.into_iter().enumerate() {
-      let valid_targets = expanding
-        .update_valid_target_vertices(loaded.iter().map(|(v, p)| (v, p.as_str())))
-        .await;
+        (expanding, idx, valid_targets)
+      })
+      .collect_vec_list();
 
+    for (expanding, idx, valid_targets) in pre.into_iter().flatten() {
       all_expanded.push(expanding);
       expanded_with_frontiers
         .entry(idx)
@@ -284,19 +290,23 @@ impl CBucket {
     }
   }
 
-  pub async fn build_from_t(
-    t_bucket: TBucket,
-    loaded_v_pat_pairs: impl IntoIterator<Item = (DataVertex, String)>,
-  ) -> Self {
-    let loaded = loaded_v_pat_pairs.into_iter().collect::<Vec<_>>();
+  pub fn build_from_t(t_bucket: TBucket, loaded_v_pat_pairs: Vec<(DataVertex, String)>) -> Self {
     let mut all_expanded = vec![];
     let mut expanded_with_frontiers = HashMap::new();
 
-    for (idx, mut expanding) in t_bucket.expanding_graphs.into_iter().enumerate() {
-      let valid_targets = expanding
-        .update_valid_target_vertices(loaded.iter().map(|(v, p)| (v, p.as_str())))
-        .await;
+    let pre = t_bucket
+      .expanding_graphs
+      .into_par_iter()
+      .enumerate()
+      .map(|(idx, mut expanding)| {
+        let valid_targets = expanding
+          .update_valid_target_vertices(loaded_v_pat_pairs.iter().map(|(v, p)| (v, p.as_str())));
 
+        (expanding, idx, valid_targets)
+      })
+      .collect_vec_list();
+
+    for (expanding, idx, valid_targets) in pre.into_iter().flatten() {
       all_expanded.push(expanding);
       expanded_with_frontiers
         .entry(idx)
@@ -312,49 +322,43 @@ impl CBucket {
 }
 
 impl TBucket {
-  pub async fn build_from_a_a(
-    left: impl IntoIterator<Item = ExpandGraph>,
-    right: impl IntoIterator<Item = ExpandGraph>,
+  pub fn build_from_a_a(
+    left: Vec<ExpandGraph>,
+    right: Vec<ExpandGraph>,
     target_pat_vid: VidRef<'_>,
   ) -> Self {
-    let left_group = left.into_iter().collect();
-    let right_group = right.into_iter().collect();
-
-    let expanding_graphs = Self::expand_edges_of_two(left_group, right_group).await;
+    let expanding_graphs = Self::expand_edges_of_two(left, right);
     Self {
       target_pat_vid: target_pat_vid.to_owned(),
       expanding_graphs,
     }
   }
 
-  pub async fn build_from_t_a(
-    t_bucket: TBucket,
-    a_group: impl IntoIterator<Item = ExpandGraph>,
-  ) -> Self {
+  pub fn build_from_t_a(t_bucket: TBucket, a_group: Vec<ExpandGraph>) -> Self {
     let left_group = t_bucket.expanding_graphs;
-    let right_group = a_group.into_iter().collect();
+    let right_group = a_group;
 
-    let expanding_graphs = Self::expand_edges_of_two(left_group, right_group).await;
+    let expanding_graphs = Self::expand_edges_of_two(left_group, right_group);
     Self {
       target_pat_vid: t_bucket.target_pat_vid,
       expanding_graphs,
     }
   }
 
-  async fn expand_edges_of_two(
+  fn expand_edges_of_two(
     left_group: Vec<ExpandGraph>,
     right_group: Vec<ExpandGraph>,
   ) -> Vec<ExpandGraph> {
-    let mut futures = vec![];
+    // collect all combinations via `cartesian_product`
+    let combinations = left_group
+      .iter()
+      .cartesian_product(right_group.iter())
+      .collect::<Vec<_>>();
 
-    for outer in left_group.iter() {
-      for inner in right_group.iter() {
-        let future = union_then_intersect_on_connective_v(outer, inner);
-        futures.push(future);
-      }
-    }
-
-    let results = future::join_all(futures).await;
-    results.into_iter().flatten().collect::<Vec<_>>()
+    // parallelize the process
+    combinations
+      .par_iter()
+      .flat_map(|&(outer, inner)| union_then_intersect_on_connective_v(outer, inner))
+      .collect()
   }
 }

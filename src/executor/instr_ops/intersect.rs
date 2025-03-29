@@ -19,8 +19,7 @@ pub struct IntersectOperator<S: StorageAdapter> {
 
 impl<S: StorageAdapter> IntersectOperator<S> {
   pub async fn execute(&mut self, instr: &Instruction) {
-    let instr_json = serde_json::to_string_pretty(instr).unwrap();
-    println!("{instr_json}\n");
+    println!("{instr:#?}\n");
 
     if instr.is_single_op() {
       let (var_prefix, _) = resolve_var(instr.single_op.as_ref().unwrap());
@@ -43,7 +42,7 @@ impl<S: StorageAdapter> IntersectOperator<S> {
     let a_group = ctx.pop_group_by_pat_from_a_block(instr.single_op.as_ref().unwrap(), &instr.vid);
     let a_group = a_group;
 
-    let c_bucket = CBucket::build_from_a_group(a_group, loaded_v_pat_pairs).await;
+    let c_bucket = CBucket::build_from_a_group(a_group, loaded_v_pat_pairs);
     ctx.update_c_block(&instr.target_var, c_bucket);
   }
 
@@ -63,12 +62,12 @@ impl<S: StorageAdapter> IntersectOperator<S> {
 
     let a1 = a_groups.pop_front().unwrap();
     let a2 = a_groups.pop_front().unwrap();
-    let mut t_bucket = TBucket::build_from_a_a(a1, a2, &instr.vid).await;
+    let mut t_bucket = TBucket::build_from_a_a(a1, a2, &instr.vid);
 
     if a_groups.len() > 2 {
       let mut prev_t = t_bucket;
       while let Some(a_group) = a_groups.pop_front() {
-        t_bucket = TBucket::build_from_t_a(prev_t, a_group).await;
+        t_bucket = TBucket::build_from_t_a(prev_t, a_group);
         prev_t = t_bucket;
       }
       t_bucket = prev_t;
@@ -85,17 +84,13 @@ impl<S: StorageAdapter> IntersectOperator<S> {
 
     let t_bucket = ctx.pop_from_t_block(instr.single_op.as_ref().unwrap());
 
-    let c_bucket = CBucket::build_from_t(t_bucket, loaded_v_pat_pairs).await;
+    let c_bucket = CBucket::build_from_t(t_bucket, loaded_v_pat_pairs);
     ctx.update_c_block(&instr.target_var, c_bucket);
   }
 
   async fn load_vertices(&self, instr: &Instruction) -> Vec<(DataVertex, String)> {
     let ctx = self.ctx.lock().await;
-    let pattern_v = ctx.get_pattern_v(&instr.vid).cloned();
-    if pattern_v.is_none() {
-      return vec![];
-    }
-    let pattern_v = pattern_v.unwrap();
+    let pattern_v = ctx.get_pattern_v(&instr.vid).to_owned();
 
     let label = pattern_v.label.as_str();
     let attr = pattern_v.attr.as_ref();
