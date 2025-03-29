@@ -117,10 +117,10 @@ impl MatchingCtx {
     self.f_block.insert(key.to_string(), f_bucket);
   }
 
-  /// `GetAdj`: Get `f_block` with `target_var` (pop it out)
-  pub fn pop_from_f_block(&mut self, single_op: &str) -> Option<FBucket> {
+  /// `GetAdj`: Get `f_block` with `target_var`
+  pub fn resolve_f_block(&mut self, single_op: &str) -> Option<&mut FBucket> {
     let key = resolve_var_name(single_op);
-    self.f_block.remove(key)
+    self.f_block.get_mut(key)
   }
 }
 
@@ -169,10 +169,10 @@ impl MatchingCtx {
     self.c_block.insert(key.to_string(), c_bucket);
   }
 
-  /// `Foreach`: Get `c_block` with `single_op` (pop it out)
-  pub fn pop_from_c_block(&mut self, single_op: &str) -> Option<CBucket> {
+  /// `Foreach`: Get `c_block` with `single_op`
+  pub fn resolve_c_block(&mut self, single_op: &str) -> Option<&mut CBucket> {
     let key = resolve_var_name(single_op);
-    self.c_block.remove(key)
+    self.c_block.get_mut(key)
   }
 }
 
@@ -191,9 +191,9 @@ impl MatchingCtx {
     self.t_block.insert(key.to_string(), t_bucket);
   }
 
-  /// `Intersect(Tx)`: Get `t_block` with `single_op` (pop it out)
-  pub fn pop_from_t_block(&mut self, single_op: &str) -> Option<TBucket> {
+  /// `Intersect(Tx)`: Get `t_block` with `single_op`
+  pub fn resolve_t_block(&mut self, single_op: &str) -> Option<&mut TBucket> {
     let key = resolve_var_name(single_op);
-    self.t_block.remove(key)
+    self.t_block.get_mut(key)
   }
 }

@@ -11,8 +11,6 @@ use crate::{
 };
 use futures::future;
 use hashbrown::{HashMap, HashSet};
-use std::sync::Arc;
-use tokio::sync::mpsc;
 
 async fn does_data_v_satisfy_pattern(
   dg_vid: VidRef<'_>,
@@ -42,34 +40,34 @@ async fn does_data_v_satisfy_pattern(
 }
 
 impl FBucket {
-  pub async fn from_c_bucket(c_bucket: CBucket) -> Self {
+  pub async fn from_c_bucket(c_bucket: &CBucket) -> Self {
     let mut all_matched = vec![];
-    let mut matched_with_pivots = HashMap::new();
+    let mut matched_with_frontiers = HashMap::new();
 
-    let all_expanded = c_bucket.all_expanded;
-    let mut expanded_with_pivots = c_bucket.expanded_with_frontiers;
+    let all_expanded = &c_bucket.all_expanded;
+    let expanded_with_pivots = &c_bucket.expanded_with_frontiers;
 
-    for (idx, matched) in all_expanded.into_iter().enumerate() {
-      all_matched.push(matched.into());
-      matched_with_pivots
+    for (idx, matched) in all_expanded.iter().enumerate() {
+      all_matched.push(matched.to_owned().into());
+      matched_with_frontiers
         .entry(idx)
         .or_insert_with(Vec::new)
-        .extend(expanded_with_pivots.remove(&idx).unwrap_or_default());
+        .extend(expanded_with_pivots[&idx].clone());
     }
 
     Self {
       all_matched,
-      matched_with_frontiers: matched_with_pivots,
+      matched_with_frontiers,
     }
   }
 }
 
 impl ABucket {
-  pub fn from_f_bucket(f_bucket: FBucket, curr_pat_vid: VidRef) -> Self {
+  pub fn from_f_bucket(f_bucket: &FBucket, curr_pat_vid: VidRef) -> Self {
     Self {
       curr_pat_vid: curr_pat_vid.to_owned(),
-      all_matched: f_bucket.all_matched,
-      matched_with_frontiers: f_bucket.matched_with_frontiers,
+      all_matched: f_bucket.all_matched.to_owned(),
+      matched_with_frontiers: f_bucket.matched_with_frontiers.to_owned(),
       next_pat_grouped_expanding: HashMap::new(),
     }
   }
@@ -169,10 +167,6 @@ impl ABucket {
 
           is_frontier_connected = true;
 
-          // channel to send results back
-          let (tx, mut rx) = mpsc::channel(next_vid_grouped_conn_es.len());
-          let mut handles = Vec::with_capacity(next_vid_grouped_conn_es.len());
-
           // build `expanding_graph`
           // note that each `next_data_vertex` holds a `expanding_graph`
           for (key, edges) in next_vid_grouped_conn_es {
@@ -181,35 +175,14 @@ impl ABucket {
               .remove(&key)
               .unwrap_or_default();
 
-            let tx = tx.clone();
-            let handle = tokio::spawn(async move {
-              expanding_graph
-                .update_valid_dangling_edges(edges.iter().zip(pat_strs.iter().map(String::as_str)))
-                .await;
-              tx.send(expanding_graph).await.unwrap();
-            });
-
-            handles.push(handle);
-          }
-
-          // close channel when all tasks are done
-          drop(tx);
-
-          // collect results from the channel:
-          //     update `self.next_pat_grouped_expanding`
-          while let Some(expanding_graph) = rx.recv().await {
+            expanding_graph
+              .update_valid_dangling_edges(edges.iter().zip(pat_strs.iter().map(String::as_str)))
+              .await;
             self
               .next_pat_grouped_expanding
               .entry(next_pat_vid.to_owned())
               .or_default()
               .push(expanding_graph);
-          }
-
-          // wait for all tasks to finish
-          for handle in handles {
-            if let Err(e) = handle.await {
-              eprintln!("Task failed: {:?}", e);
-            }
           }
         }
 
@@ -286,54 +259,23 @@ impl CBucket {
     a_group: impl IntoIterator<Item = ExpandGraph>,
     loaded_v_pat_pairs: impl IntoIterator<Item = (DataVertex, String)>,
   ) -> Self {
-    let loaded = Arc::new(
-      loaded_v_pat_pairs
-        .into_iter()
-        .map(|(v, p)| (Arc::new(v), p))
-        .collect::<Vec<_>>(),
-    );
+    let loaded = loaded_v_pat_pairs.into_iter().collect::<Vec<_>>();
 
     let mut all_expanded = vec![];
     let mut expanded_with_frontiers = HashMap::new();
 
     let a_group = a_group.into_iter().collect::<Vec<_>>();
 
-    // create a channel to send results back
-    let (tx, mut rx) = mpsc::channel(a_group.len());
-    let mut handles = Vec::with_capacity(a_group.len());
-
     for (idx, mut expanding) in a_group.into_iter().enumerate() {
-      let tx = tx.clone();
-      let data_ref = loaded.clone();
+      let valid_targets = expanding
+        .update_valid_target_vertices(loaded.iter().map(|(v, p)| (v, p.as_str())))
+        .await;
 
-      let handle = tokio::spawn(async move {
-        let valid_targets = expanding
-          .update_valid_target_vertices(data_ref.iter().map(|(v, p)| (v.as_ref(), p.as_str())))
-          .await;
-
-        // Send the results back through the channel
-        tx.send((idx, expanding, valid_targets)).await.unwrap();
-      });
-      handles.push(handle);
-    }
-
-    // close channel when all tasks are done
-    drop(tx);
-
-    // collect results from the channel
-    while let Some((idx, expanding, valid_targets)) = rx.recv().await {
       all_expanded.push(expanding);
       expanded_with_frontiers
         .entry(idx)
         .or_insert_with(Vec::new)
         .extend(valid_targets);
-    }
-
-    // wait for all tasks to finish
-    for handle in handles {
-      if let Err(e) = handle.await {
-        eprintln!("Task failed: {:?}", e);
-      }
     }
 
     Self {
@@ -343,54 +285,23 @@ impl CBucket {
   }
 
   pub async fn build_from_t(
-    t_bucket: TBucket,
+    t_bucket: &mut TBucket,
     loaded_v_pat_pairs: impl IntoIterator<Item = (DataVertex, String)>,
   ) -> Self {
-    let loaded = Arc::new(
-      loaded_v_pat_pairs
-        .into_iter()
-        .map(|(v, p)| (Arc::new(v), p))
-        .collect::<Vec<_>>(),
-    );
+    let loaded = loaded_v_pat_pairs.into_iter().collect::<Vec<_>>();
     let mut all_expanded = vec![];
     let mut expanded_with_frontiers = HashMap::new();
 
-    // Create a channel to send results back
-    let (tx, mut rx) = mpsc::channel(t_bucket.expanding_graphs.len());
-    let mut handles = Vec::with_capacity(t_bucket.expanding_graphs.len());
+    for (idx, expanding) in t_bucket.expanding_graphs.iter_mut().enumerate() {
+      let valid_targets = expanding
+        .update_valid_target_vertices(loaded.iter().map(|(v, p)| (v, p.as_str())))
+        .await;
 
-    for (idx, mut expanding) in t_bucket.expanding_graphs.into_iter().enumerate() {
-      let tx = tx.clone();
-      let data_ref = loaded.clone();
-
-      let handle = tokio::spawn(async move {
-        let valid_targets = expanding
-          .update_valid_target_vertices(data_ref.iter().map(|(v, p)| (v.as_ref(), p.as_str())))
-          .await;
-
-        // Send the results back through the channel
-        tx.send((idx, expanding, valid_targets)).await.unwrap();
-      });
-      handles.push(handle);
-    }
-
-    // Close channel when all tasks are done
-    drop(tx);
-
-    // Collect results from the channel
-    while let Some((idx, expanding, valid_targets)) = rx.recv().await {
-      all_expanded.push(expanding);
+      all_expanded.push(expanding.to_owned());
       expanded_with_frontiers
         .entry(idx)
         .or_insert_with(Vec::new)
         .extend(valid_targets);
-    }
-
-    // Wait for all tasks to finish
-    for handle in handles {
-      if let Err(e) = handle.await {
-        eprintln!("Task failed: {:?}", e);
-      }
     }
 
     Self {

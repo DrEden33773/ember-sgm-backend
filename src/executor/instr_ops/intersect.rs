@@ -90,9 +90,11 @@ impl<S: StorageAdapter> IntersectOperator<S> {
 
   /// `Vi` ∩ `Tx` -> `Cy`
   async fn with_temp_intersected(&mut self, instr: &Instruction) {
-    { self.ctx.lock().await }.init_c_block(&instr.target_var);
+    let mut ctx = self.ctx.lock().await;
 
-    let t_bucket = { self.ctx.lock().await }.pop_from_t_block(instr.single_op.as_ref().unwrap());
+    ctx.init_c_block(&instr.target_var);
+
+    let t_bucket = ctx.resolve_t_block(instr.single_op.as_ref().unwrap());
     if t_bucket.is_none() {
       println!(
         "No 't_bucket' found for '{}'\n",
@@ -104,7 +106,7 @@ impl<S: StorageAdapter> IntersectOperator<S> {
 
     let loaded_v_pat_pairs = self.load_vertices(instr).await;
     let c_bucket = CBucket::build_from_t(t_bucket, loaded_v_pat_pairs).await;
-    { self.ctx.lock().await }.update_c_block(&instr.target_var, c_bucket);
+    ctx.update_c_block(&instr.target_var, c_bucket);
   }
 
   async fn load_vertices(&self, instr: &Instruction) -> Vec<(DataVertex, String)> {

@@ -19,12 +19,12 @@ impl<S: StorageAdapter> GetAdjOperator<S> {
     println!("{instr_json}\n");
 
     let (_, curr_pat_vid) = resolve_var(instr.single_op.as_ref().unwrap());
+    let mut ctx = self.ctx.lock().await;
 
-    let pattern_es =
-      { self.ctx.lock().await }.fetch_pattern_e_batch(instr.expand_eids.iter().map(String::as_str));
-    let pattern_vs = { self.ctx.lock().await }.pattern_vs().to_owned();
+    let pattern_es = ctx.fetch_pattern_e_batch(instr.expand_eids.iter().map(String::as_str));
+    let pattern_vs = ctx.pattern_vs().to_owned();
 
-    let f_bucket = { self.ctx.lock().await }.pop_from_f_block(instr.single_op.as_ref().unwrap());
+    let f_bucket = ctx.resolve_f_block(instr.single_op.as_ref().unwrap());
     if f_bucket.is_none() {
       println!(
         "No 'f_bucket' found for '{}'\n",
@@ -34,7 +34,7 @@ impl<S: StorageAdapter> GetAdjOperator<S> {
     }
     let mut a_bucket = ABucket::from_f_bucket(f_bucket.unwrap(), curr_pat_vid);
 
-    { self.ctx.lock().await }.init_a_block(&instr.target_var);
+    ctx.init_a_block(&instr.target_var);
 
     let connected_data_vids = {
       let storage_adapter = self.storage_adapter.lock().await;
@@ -43,7 +43,7 @@ impl<S: StorageAdapter> GetAdjOperator<S> {
         .await
     };
 
-    { self.ctx.lock().await }.update_a_block(&instr.target_var, a_bucket);
-    { self.ctx.lock().await }.update_extended_data_vids(connected_data_vids);
+    ctx.update_a_block(&instr.target_var, a_bucket);
+    ctx.update_extended_data_vids(connected_data_vids);
   }
 }
