@@ -85,18 +85,21 @@ impl<VType: VBase, EType: EBase> ExpandGraph<VType, EType> {
 }
 
 impl<VType: VBase, EType: EBase> ExpandGraph<VType, EType> {
+  /// Group dangling edges by their pending(unconnected) vertices.
   pub fn group_dangling_e_by_pending_v(&self) -> HashMap<String, Vec<EType>> {
     let mut grouped: HashMap<String, Vec<EType>> = HashMap::new();
 
     for dangling_e in self.dangling_e_entities.values() {
       if self.dyn_graph.has_vid(dangling_e.src_vid()) {
         grouped
-          .entry(dangling_e.src_vid().to_owned())
+          // .entry(dangling_e.src_vid().to_owned()) // BUG
+          .entry(dangling_e.dst_vid().to_owned())
           .or_default()
           .push(dangling_e.clone());
       } else if self.dyn_graph.has_vid(dangling_e.dst_vid()) {
         grouped
-          .entry(dangling_e.dst_vid().to_owned())
+          // .entry(dangling_e.dst_vid().to_owned()) // BUG
+          .entry(dangling_e.src_vid().to_owned())
           .or_default()
           .push(dangling_e.clone());
       }
@@ -105,12 +108,14 @@ impl<VType: VBase, EType: EBase> ExpandGraph<VType, EType> {
     grouped
   }
 
-  fn is_valid_edge(&self, e: &EType) -> bool {
+  /// Check if the edge is a valid dangling edge
+  fn is_valid_dangling_edge(&self, e: &EType) -> bool {
     self.dyn_graph.is_e_connective(e)
       && !self.dyn_graph.is_e_full_connective(e)
       && !self.dyn_graph.has_eid(e.eid())
   }
 
+  /// Update valid dangling edges and return them
   pub fn update_valid_dangling_edges<'a>(
     &'a mut self,
     dangling_edges: impl IntoIterator<Item = (&'a EType, &'a str)>,
@@ -118,7 +123,7 @@ impl<VType: VBase, EType: EBase> ExpandGraph<VType, EType> {
     let mut legal_eids = HashSet::new();
 
     for (e, pattern) in dangling_edges {
-      if !self.is_valid_edge(e) {
+      if !self.is_valid_dangling_edge(e) {
         continue;
       }
       legal_eids.insert(e.eid().to_owned());
@@ -133,6 +138,7 @@ impl<VType: VBase, EType: EBase> ExpandGraph<VType, EType> {
     legal_eids
   }
 
+  /// Check if the vertex is a valid target vertex
   fn is_valid_target(&self, v: &VType) -> bool {
     for e in self.dangling_e_entities.values() {
       if e.contains(v.vid()) && !self.dyn_graph.has_vid(v.vid()) {
@@ -142,6 +148,9 @@ impl<VType: VBase, EType: EBase> ExpandGraph<VType, EType> {
     false
   }
 
+  /// Update valid target vertices and return them
+  ///
+  /// - Vertices of any `dangling_edge` could be added to `target_v_adj_table`
   pub fn update_valid_target_vertices<'a>(
     &'a mut self,
     target_vertices: impl IntoIterator<Item = (&'a VType, &'a str)>,
@@ -204,7 +213,6 @@ pub fn union_then_intersect_on_connective_v<VType: VBase, EType: EBase>(
     r_expand_graph.group_dangling_e_by_pending_v(),
   );
 
-  // let mut target_v_grouped_results = HashMap::new();
   let mut result = vec![];
 
   for (l_pending_vid, l_dangling_es) in &grouped_l {
@@ -226,16 +234,8 @@ pub fn union_then_intersect_on_connective_v<VType: VBase, EType: EBase>(
       );
 
       result.push(expanding_dg);
-      // target_v_grouped_results
-      //   .entry(l_pending_vid.to_owned())
-      //   .or_insert_with(Vec::new)
-      //   .push(expanding_dg);
     }
   }
-
-  // for (_, group) in target_v_grouped_results.drain() {
-  //   result.extend(group);
-  // }
 
   result
 }

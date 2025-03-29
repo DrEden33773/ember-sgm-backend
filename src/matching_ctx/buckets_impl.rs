@@ -78,11 +78,10 @@ impl ABucket {
 
   pub async fn incremental_load_new_edges(
     &mut self,
-    pattern_es: impl IntoIterator<Item = PatternEdge>,
+    pattern_es: Vec<PatternEdge>,
     pattern_vs: &HashMap<Vid, PatternVertex>,
     storage_adapter: &impl StorageAdapter,
   ) -> HashSet<String> {
-    let pattern_es = pattern_es.into_iter().collect::<Vec<_>>();
     let mut connected_data_vids = HashSet::new();
 
     // iter: `matched` data_graphs

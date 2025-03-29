@@ -101,6 +101,7 @@ impl MatchingCtx {
     frontier_vid: VidRef,
   ) {
     let key = resolve_var_name(target_var);
+
     // let next_idx = self.f_block.len(); // BUG
     let next_idx = self.f_block[key].all_matched.len();
 

@@ -36,11 +36,11 @@ impl<S: StorageAdapter> IntersectOperator<S> {
   /// `Vi` ∩ `Ax` -> `Cy`
   async fn with_adj_set(&mut self, instr: &Instruction) {
     let loaded_v_pat_pairs = self.load_vertices(instr).await;
+
     let mut ctx = self.ctx.lock().await;
     ctx.init_c_block(&instr.target_var);
 
     let a_group = ctx.pop_group_by_pat_from_a_block(instr.single_op.as_ref().unwrap(), &instr.vid);
-    let a_group = a_group;
 
     let c_bucket = CBucket::build_from_a_group(a_group, loaded_v_pat_pairs);
     ctx.update_c_block(&instr.target_var, c_bucket);
@@ -79,6 +79,7 @@ impl<S: StorageAdapter> IntersectOperator<S> {
   /// `Vi` ∩ `Tx` -> `Cy`
   async fn with_temp_intersected(&mut self, instr: &Instruction) {
     let loaded_v_pat_pairs = self.load_vertices(instr).await;
+
     let mut ctx = self.ctx.lock().await;
     ctx.init_c_block(&instr.target_var);
 

@@ -165,8 +165,8 @@ impl<VType: VBase, EType: EBase> DynGraph<VType, EType> {
     self.v_entities.insert(vid.to_owned(), vertex);
 
     // self.adj_table.insert(vid.to_owned(), VNode::default()); // BUG
-
     self.adj_table.entry(vid.to_owned()).or_default();
+
     self.v_patterns.insert(vid, pattern);
     self
   }
@@ -186,22 +186,25 @@ impl<VType: VBase, EType: EBase> DynGraph<VType, EType> {
     let src_vid = edge.src_vid().to_owned();
     let dst_vid = edge.dst_vid().to_owned();
 
-    self.e_entities.insert(eid.to_owned(), edge);
-
     if self.has_all_vids(&[&src_vid, &dst_vid]) {
+      self.e_entities.insert(eid.to_owned(), edge);
+
       self
         .adj_table
         .entry(src_vid)
         .or_default()
         .e_out
         .insert(eid.to_owned());
+
       self
         .adj_table
         .entry(dst_vid)
         .or_default()
         .e_in
         .insert(eid.to_owned());
-      self.e_patterns.insert(eid, pattern.to_owned());
+
+      self.e_patterns.insert(eid, pattern);
+
       self
     } else if self.has_vid(&src_vid) {
       panic!(
@@ -238,6 +241,7 @@ impl<VType: VBase, EType: EBase> DynGraph<VType, EType> {
       v.e_out.remove(eid);
     }
     self.e_entities.remove(eid);
+
     self
   }
 
@@ -306,9 +310,9 @@ impl<VType: VBase, EType: EBase> DynGraph<VType, EType> {
     self
       .v_entities
       .iter()
-      .filter_map(|(vid, v_entity)| {
-        let pattern = self.v_patterns.get(vid).cloned();
-        pattern.map(|p| (v_entity.clone(), p))
+      .map(|(vid, v_entity)| {
+        let pattern = self.v_patterns[vid].to_owned();
+        (v_entity.clone(), pattern)
       })
       .collect()
   }
@@ -317,9 +321,9 @@ impl<VType: VBase, EType: EBase> DynGraph<VType, EType> {
     self
       .e_entities
       .iter()
-      .filter_map(|(eid, e_entity)| {
-        let pattern = self.e_patterns.get(eid).cloned();
-        pattern.map(|p| (e_entity.clone(), p))
+      .map(|(eid, e_entity)| {
+        let pattern = self.e_patterns[eid].to_owned();
+        (e_entity.clone(), pattern)
       })
       .collect()
   }
