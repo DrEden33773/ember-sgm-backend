@@ -6,5 +6,5 @@ use tokio::io;
 async fn main() -> io::Result<()> {
   dotenv().ok();
 
-  ic_11_on_sf_01().await
+  ic_12_on_sf_01().await
 }
